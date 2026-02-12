@@ -129,30 +129,70 @@ Generates beautiful, responsive HTML reports from stock analysis data.
    - Inline SVG charts for price and volume
    - Technical indicator visualization
 
-3. **🚀 Remote Upload**
-   - Upload to remote servers via SCP
-   - Auto-generate shareable URL
-   - Supports custom hosts (e.g., cvm_nj)
+3. **☁️ Tencent Cloud COS Upload (RECOMMENDED)**
+   - Upload HTML reports to Tencent Cloud COS
+   - Generate shareable HTTPS URLs
+   - Secure and fast CDN access
+   - Supports inline credentials or environment variables
 
 ### Usage
 
 ```bash
-# Generate HTML from JSON data (pipe from xueqiu script)
-python scripts/stock_analysis_xueqiu.py BABA --json | python scripts/stock_analysis_html.py -
+# Generate HTML from JSON file
+python scripts/stock_analysis_html.py <SYMBOL> <DATA.json> [OUTPUT.html]
 
-# Generate from JSON file
-python scripts/stock_analysis_html.py analysis_data.json
+# Generate and upload to COS (inline credentials)
+python scripts/stock_analysis_html.py BABA data.json --cos \
+    --secret-id YOUR_SECRET_ID \
+    --secret-key YOUR_SECRET_KEY \
+    --region ap-shanghai \
+    --bucket your-bucket-name
 
-# Generate and upload to server
-python scripts/stock_analysis_html.py analysis_data.json --upload cvm_nj
+# Upload existing HTML to COS
+python scripts/stock_analysis_html.py --upload report.html --cos \
+    --secret-id YOUR_SECRET_ID \
+    --secret-key YOUR_SECRET_KEY \
+    --region ap-shanghai \
+    --bucket your-bucket-name
+```
+
+### Environment Variables (Optional)
+
+Set default COS credentials for repeated use:
+
+```bash
+export TENCENT_COS_SECRET_ID="your_secret_id"
+export TENCENT_COS_SECRET_KEY="your_secret_key"
+export TENCENT_COS_REGION="ap-shanghai"
+export TENCENT_COS_BUCKET="your-bucket-name"
+```
+
+Then simply use `--cos` without credentials:
+
+```bash
+python scripts/stock_analysis_html.py BABA data.json --cos
+```
+
+### COS URL Format
+
+Uploaded files are accessible at:
+```
+https://{bucket}.cos.{region}.myqcloud.com/stock-reports/{filename}.html
+```
+
+Example:
+```
+https://my-stock-bucket.cos.ap-shanghai.myqcloud.com/stock-reports/BABA_report.html
 ```
 
 ### Integration
 
-The HTML generator is designed to work with `stock_analysis_xueqiu.py` output. The agent can:
+The HTML generator works with `stock_analysis_xueqiu.py` output:
+
 1. Run xueqiu analysis to get raw data
-2. Pipe data into HTML generator
-3. Upload and share the link
+2. Generate HTML report
+3. Upload to COS
+4. Share the HTTPS URL
 
 ---
 

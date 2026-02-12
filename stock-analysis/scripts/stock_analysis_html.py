@@ -2,13 +2,38 @@
 """
 Stock Analysis HTML Report Generator
 Generates beautiful, responsive HTML reports for stocks
-Supports upload to remote servers (cvm_nj, etc.)
+Supports upload to Tencent Cloud COS (recommended) or remote servers
 """
 
 import json
 import sys
 import os
 from datetime import datetime
+from pathlib import Path
+
+# Tencent Cloud COS SDK
+try:
+    from qcloud_cos_v5 import CosConfig, CosS3Client
+    COS_SDK_AVAILABLE = True
+except ImportError:
+    COS_SDK_AVAILABLE = False
+    print("⚠️ Tencent Cloud COS SDK not installed. Install with: pip3 install cos-python-sdk-v5")
+
+
+# ============ Tencent Cloud COS Configuration ============
+# 配置说明：在环境变量或配置文件中设置以下参数
+# export TENCENT_COS_SECRET_ID="your_secret_id"
+# export TENCENT_COS_SECRET_KEY="your_secret_key"
+# export TENCENT_COS_REGION="ap-shanghai"
+# export TENCENT_COS_BUCKET="your-bucket-name"
+
+COS_CONFIG = {
+    'secret_id': os.environ.get('TENCENT_COS_SECRET_ID', ''),
+    'secret_key': os.environ.get('TENCENT_COS_SECRET_KEY', ''),
+    'region': os.environ.get('TENCENT_COS_REGION', 'ap-shanghai'),
+    'bucket': os.environ.get('TENCENT_COS_BUCKET', ''),
+    'cos_path': 'stock-reports/'  # COS上的存储路径
+}
 
 # HTML templates
 HTML_TEMPLATE = """<!DOCTYPE html>
@@ -624,6 +649,114 @@ def generate_html_report(symbol, data, output_path=None):
     return html
 
 
+# ============ Tencent Cloud COS Upload Functions ============
+
+def upload_to_cos(file_path, cos_key=None):
+    """
+    Upload HTML file to Tencent Cloud COS
+    
+    Args:
+        file_path: Local file path to upload
+        cos_key: Custom COS object key (filename in bucket)
+    
+    Returns:
+        tuple: (success: bool, url: str or error_message)
+    """
+    if not COS_SDK_AVAILABLE:
+        return False, "COS SDK not installed"
+    
+    config = COS_CONFIG
+    if not config['secret_id'] or not config['secret_key']:
+        return False, "COS credentials not configured. Set environment variables:\n  export TENCENT_COS_SECRET_ID=\"your_secret_id\"\n  export TENCENt_COS_SECRET_KEY=\"your_secret_key\"\n  export TENCENT_COS_REGION=\"ap-shanghai\"\n  export TENCENT_COS_BUCKET=\"your-bucket-name\""
+    
+    if not config['bucket']:
+        return False, "COS bucket not configured. Set TENCENT_COS_BUCKET environment variable"
+    
+    # Generate COS key if not provided
+    if not cos_key:
+        filename = os.path.basename(file_path)
+        cos_key = f"{config['cos_path']}{filename}"
+    
+    try:
+        # Configure COS client
+        token = None
+        scheme = 'https'
+        
+        cos_config = CosConfig(
+            Region=config['region'],
+            SecretId=config['secret_id'],
+            SecretKey=config['secret_key'],
+            Token=token,
+            Scheme=scheme
+        )
+        
+        client = CosS3Client(cos_config)
+        
+        # Upload file
+        with open(file_path, 'rb') as fp:
+            response = client.put_object(
+                Bucket=config['bucket'],
+                Body=fp,
+                Key=cos_key,
+                EnableMD5=False
+            )
+        
+        # Generate URL
+        # COS URL format: https://{bucket}.cos.{region}.myqcloud.com/{key}
+        url = f"https://{config['bucket']}.cos.{config['region']}.myqcloud.com/{cos_key}"
+        
+        print(f"✅ Uploaded to COS: {url}")
+        return True, url
+        
+    except Exception as e:
+        return False, f"COS upload failed: {str(e)}"
+
+
+def upload_via_cred(secret_id, secret_key, region, bucket, file_path, cos_key=None):
+    """
+    Upload file to COS with provided credentials (for one-time use)
+    
+    Args:
+        secret_id: Tencent Cloud SecretId
+        secret_key: Tencent Cloud SecretKey
+        region: COS region (e.g., ap-shanghai)
+        bucket: COS bucket name
+        file_path: Local file to upload
+        cos_key: Custom COS object key
+    
+    Returns:
+        tuple: (success: bool, url: str or error)
+    """
+    if not COS_SDK_AVAILABLE:
+        return False, "COS SDK not installed"
+    
+    if not cos_key:
+        filename = os.path.basename(file_path)
+        cos_key = f"stock-reports/{filename}"
+    
+    try:
+        cos_config = CosConfig(
+            Region=region,
+            SecretId=secret_id,
+            SecretKey=secret_key
+        )
+        
+        client = CosS3Client(cos_config)
+        
+        with open(file_path, 'rb') as fp:
+            client.put_object(
+                Bucket=bucket,
+                Body=fp,
+                Key=cos_key
+            )
+        
+        url = f"https://{bucket}.cos.{region}.myqcloud.com/{cos_key}"
+        return True, url
+        
+    except Exception as e:
+        return False, f"COS upload failed: {str(e)}"
+
+
 def demo():
     """Generate demo HTML report"""
     demo_data = {
@@ -715,16 +848,112 @@ def demo():
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == '--demo':
+    import argparse
+    
+    parser = argparse.ArgumentParser(
+        description='Generate HTML stock analysis report',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Generate demo report
+  python stock_analysis_html.py --demo
+
+  # Generate report from JSON
+  python stock_analysis_html.py TSLA data.json
+
+  # Generate and save to file
+  python stock_analysis_html.py TSLA data.json report.html
+
+  # Generate, save, and upload to COS (with inline credentials)
+  python stock_analysis_html.py TSLA data.json --cos \
+    --secret-id YOUR_ID --secret-key YOUR_KEY \
+    --region ap-shanghai --bucket your-bucket
+
+  # Upload existing file to COS
+  python stock_analysis_html.py --upload report.html --cos \
+    --secret-id YOUR_ID --secret-key YOUR_KEY \
+    --region ap-shanghai --bucket your-bucket
+
+Environment Variables (for default credentials):
+  TENCENT_COS_SECRET_ID     - Tencent Cloud SecretId
+  TENCENT_COS_SECRET_KEY    - Tencent Cloud SecretKey
+  TENCENT_COS_REGION        - COS region (e.g., ap-shanghai)
+  TENCENT_COS_BUCKET        - COS bucket name
+        """
+    )
+    
+    parser.add_argument('--demo', action='store_true', help='Generate demo report')
+    parser.add_argument('--upload', metavar='FILE', help='Upload existing file to COS')
+    parser.add_argument('--cos', action='store_true', help='Upload result to Tencent Cloud COS')
+    
+    # COS credentials
+    parser.add_argument('--secret-id', help='Tencent Cloud SecretId')
+    parser.add_argument('--secret-key', help='Tencent Cloud SecretKey')
+    parser.add_argument('--region', default='ap-shanghai', help='COS region (default: ap-shanghai)')
+    parser.add_argument('--bucket', help='COS bucket name')
+    parser.add_argument('--cos-key', help='Custom COS object key')
+    
+    # Positional arguments
+    parser.add_argument('symbol', nargs='?', help='Stock symbol')
+    parser.add_argument('data_file', nargs='?', help='JSON data file')
+    parser.add_argument('output_file', nargs='?', help='Output HTML file')
+    
+    args = parser.parse_args()
+    
+    if args.demo:
         demo()
-    elif len(sys.argv) > 2:
-        # Load JSON data and generate report
-        with open(sys.argv[2], 'r', encoding='utf-8') as f:
+    elif args.upload:
+        # Upload existing file to COS
+        if not args.cos:
+            print("Error: --upload requires --cos flag")
+            sys.exit(1)
+        
+        if not COS_SDK_AVAILABLE:
+            print("Error: COS SDK not installed. Run: pip3 install cos-python-sdk-v5")
+            sys.exit(1)
+        
+        if not args.secret_id or not args.secret_key or not args.bucket:
+            print("Error: --secret-id, --secret-key, and --bucket are required for upload")
+            sys.exit(1)
+        
+        success, result = upload_via_cred(
+            args.secret_id, args.secret_key, args.region, args.bucket,
+            args.upload, args.cos_key
+        )
+        
+        if success:
+            print(f"\n🌐 Shareable URL: {result}")
+        else:
+            print(f"Error: {result}")
+            sys.exit(1)
+            
+    elif args.symbol and args.data_file:
+        # Generate HTML report
+        with open(args.data_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        generate_html_report(sys.argv[1], data, sys.argv[3] if len(sys.argv) > 3 else None)
+        
+        output_path = args.output_file or f"{args.symbol}_report.html"
+        html = generate_html_report(args.symbol, data, output_path)
+        
+        print(f"✅ Generated: {output_path}")
+        print(f"📊 File size: {len(html)} bytes")
+        
+        # Upload to COS if requested
+        if args.cos:
+            if not COS_SDK_AVAILABLE:
+                print("⚠️ COS SDK not installed. Skipping upload.")
+            elif not args.secret_id or not args.secret_key or not args.bucket:
+                print("⚠️ COS credentials not provided. Skipping upload.")
+                print("   Use --secret-id, --secret-key, --region, --bucket flags")
+            else:
+                success, result = upload_via_cred(
+                    args.secret_id, args.secret_key, args.region, args.bucket,
+                    output_path, args.cos_key
+                )
+                
+                if success:
+                    print(f"\n🌐 COS URL: {result}")
+                else:
+                    print(f"⚠️ COS upload failed: {result}")
     else:
-        print("Usage:")
-        print("  python stock_analysis_html.py --demo          # Generate demo report")
-        print("  python stock_analysis_html.py <SYMBOL> <DATA.json> [OUTPUT.html]")
-        print("\nExample:")
-        print("  python stock_analysis_html.py TSLA data.json report.html")
+        parser.print_help()
