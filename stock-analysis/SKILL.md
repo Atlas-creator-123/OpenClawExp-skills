@@ -12,7 +12,8 @@ description: Comprehensive stock analysis with technical indicators, fundamental
 | `stock_chart.py` | Price & volume chart | Yahoo Finance |
 | `stock_quant.py` | Technical indicators | Yahoo Finance |
 | `stock_analysis.py` | Comprehensive report | Yahoo Finance |
-| `stock_analysis_xueqiu.py` | **NEW** Multi-source analysis | 雪球 + Browser |
+| `stock_analysis_xueqiu.py` | Multi-source analysis | 雪球 + Browser |
+| `stock_analysis_html.py` | **NEW** HTML report generator | JSON input |
 
 ---
 
@@ -30,6 +31,9 @@ python scripts/stock_analysis.py <SYMBOL> --market <HK|US|CN>
 
 # Enhanced multi-source analysis (雪球 browser)
 python scripts/stock_analysis_xueqiu.py <SYMBOL>
+
+# Generate HTML report from JSON data
+python scripts/stock_analysis_html.py <JSON_FILE> [--upload HOST]
 ```
 
 ### Examples
@@ -107,6 +111,48 @@ python scripts/stock_analysis.py 600519.SH --market CN # Maotai CN
   Market Sentiment:   ████░░ (4/6) - POSITIVE
   ...
 ```
+
+---
+
+## stock_analysis_html.py - HTML Report Generator
+
+### Features
+
+Generates beautiful, responsive HTML reports from stock analysis data.
+
+1. **📊 Visual Dashboard**
+   - Gradient dark theme with modern UI
+   - Real-time price display with color-coded changes
+   - Score meters (technical/fundamental/sentiment)
+
+2. **📈 Chart Integration**
+   - Inline SVG charts for price and volume
+   - Technical indicator visualization
+
+3. **🚀 Remote Upload**
+   - Upload to remote servers via SCP
+   - Auto-generate shareable URL
+   - Supports custom hosts (e.g., cvm_nj)
+
+### Usage
+
+```bash
+# Generate HTML from JSON data (pipe from xueqiu script)
+python scripts/stock_analysis_xueqiu.py BABA --json | python scripts/stock_analysis_html.py -
+
+# Generate from JSON file
+python scripts/stock_analysis_html.py analysis_data.json
+
+# Generate and upload to server
+python scripts/stock_analysis_html.py analysis_data.json --upload cvm_nj
+```
+
+### Integration
+
+The HTML generator is designed to work with `stock_analysis_xueqiu.py` output. The agent can:
+1. Run xueqiu analysis to get raw data
+2. Pipe data into HTML generator
+3. Upload and share the link
 
 ---
 
